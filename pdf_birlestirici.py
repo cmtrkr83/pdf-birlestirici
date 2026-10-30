@@ -426,11 +426,15 @@ def process_district(district_dir, output_dir, log, progress, finished):
     """İlçe klasörünü tarar, birleştirir ve raporu üretir."""
     try:
         subfolders = []
-        for name in os.listdir(district_dir):
-            full = os.path.join(district_dir, name)
-            if os.path.isdir(full) and name != OUTPUT_DIR_NAME:
-                subfolders.append(full)
-        subfolders.sort(key=lambda p: natural_key(os.path.basename(p)))
+        for current_dir, dirnames, _ in os.walk(district_dir):
+            # Üretilen dosyaları yeniden girdi olarak tarama.
+            dirnames[:] = [name for name in dirnames
+                           if name != OUTPUT_DIR_NAME]
+            if list_pdfs(current_dir):
+                subfolders.append(current_dir)
+        subfolders.sort(
+            key=lambda p: natural_key(
+                os.path.relpath(p, district_dir).replace(os.sep, "/")))
 
         if not subfolders:
             log("Uyarı: İlçe klasöründe hiç alt klasör bulunamadı.")
@@ -454,19 +458,23 @@ def process_district(district_dir, output_dir, log, progress, finished):
         progress(0, len(subfolders))
 
         for idx, folder in enumerate(subfolders, start=1):
-            kod = os.path.basename(folder)
             pdfs = list_pdfs(folder)
+            relative_folder = os.path.relpath(folder, district_dir)
+            kod = (relative_folder if relative_folder != "."
+                   else os.path.basename(district_dir))
 
             if not pdfs:
-                log(f"[UYARI] {kod}: klasörde PDF bulunamadı (atlandı).")
-                error_rows.append({"kod": kod, "tur": "Klasör",
-                                   "ad": kod,
-                                   "aciklama": "PDF bulunamadı"})
                 progress(idx, len(subfolders))
                 continue
 
             log(f"[İŞLENİYOR] {kod}: {len(pdfs)} şube PDF'i...")
-            output_path = os.path.join(output_dir, f"{kod}.pdf")
+            output_parent = os.path.dirname(relative_folder)
+            if output_parent == ".":
+                output_parent = ""
+            output_folder = os.path.join(output_dir, output_parent)
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(
+                output_folder, f"{os.path.basename(folder)}.pdf")
 
             result = merge_folder_pdfs(pdfs, output_path, log)
             okul_adi = result["school_info"]["okul_adi"]
